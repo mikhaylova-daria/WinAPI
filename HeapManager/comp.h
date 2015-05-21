@@ -9,14 +9,14 @@ void comp() {
 	myHeap.Create(1, 100 * 4096);
 	HANDLE heap = HeapCreate(0, 1, 100 * 4096);
 
-	time_t begining;
-	time_t end;
+	int begining;
+	int end;
 
-	double myAlloc = 0;
-	double stAlloc = 0;
+	int myAlloc = 0;
+	int stAlloc = 0;
 
-	double myFree = 0;
-	double stFree = 0;
+	int myFree = 0;
+	int stFree = 0;
 
 
 	std::map<int, int> indexes;
@@ -24,57 +24,77 @@ void comp() {
 	std::default_random_engine generator;
 	std::uniform_int_distribution<int> distribution(1, 3000);
 	int weight = 0;
-	while (rand.size() != 1000) {
+	std::vector<int> weights;
+	while (weights.size() != 1000) {
 		int n = distribution(generator);
 		if (rand.insert(n).second == true) {
-			weight += n;
-			begining = clock();
-			my.push_back(myHeap.Alloc(n));
-			end = clock();
-			myAlloc += (end - begining);
-			begining = clock();
-			st.push_back(HeapAlloc(heap, 0, n));
-			end = clock();
-			stAlloc += (end - begining);
-			if (my[my.size() - 1] == NULL) {
-				std::cout << "my heap is ended :(" << std::endl;
-				//myHeap.Print();
-				std::cout << "number of elements: " << my.size() << " summary weight: " << " " << weight << " weight of last element: " << n << std::endl;;
-			}
-			if (st[st.size() - 1] == NULL) {
-				std::cout << "standart heap is ended :(" << std::endl;
-				//myHeap.Print();
-				std::cout << "number of elements: " << my.size() << " summary weight: " << " " << weight << " weight of last element: " << n << std::endl;;
-			}
-			if (my[my.size() - 1] == NULL || st[st.size() - 1] == NULL) {
-				break;
-			}
+			weights.push_back(n);
 		}
 	}
 
-	std::set<int> forFree;
-	std::uniform_int_distribution<int> distributionForInd(0, rand.size() - 1);
+	begining = __rdtsc();;
+	int i;
+	for (i = 0; i < 1000; ++i) {
+		my.push_back(myHeap.Alloc(weights[i]));
+		if (my[my.size() - 1] == NULL) {
+			end = __rdtsc();;
+			myAlloc = (end - begining);
+			std::cout << "my heap is ended :(" << std::endl;
+			//myHeap.Print();
+			std::cout << "number of elements: " << my.size() << std::endl;
+			break;
+		}
+	}
+	if (i == 1000) {
+		end = __rdtsc();
+		myAlloc = (end - begining);
+	}
 
-	for (int i = 0; i < rand.size() / 2; ++i) {
+	int minsize = my.size();
+	begining = __rdtsc();
+	for (i = 0; i < minsize; ++i) {
+		st.push_back(HeapAlloc(heap, 0, weights[i]));
+		if (st[st.size() - 1] == NULL) {
+			end = __rdtsc();
+			stAlloc = (end - begining);
+			std::cout << "standart heap is ended :(" << std::endl;
+			//myHeap.Print();
+			std::cout << "number of elements: " << my.size() << std::endl;
+			if (minsize > st.size()) {
+				minsize = st.size();
+			}
+			break;
+		}
+	}
+	if (i == minsize) {
+		end = __rdtsc();
+		stAlloc = (end - begining);
+	}
+
+
+	std::set<int> forFree;
+	std::uniform_int_distribution<int> distributionForInd(0, minsize - 1);
+
+	for (i = 0; i < minsize / 2; ++i) {
 		forFree.insert(distributionForInd(generator));
 	}
 
 	std::set<int>::iterator itr = forFree.begin();
-	begining = clock();
+	begining = __rdtsc();
 	for (; itr != forFree.end(); ++itr) {
 		int i = *itr;
 		HeapFree(heap, 0, st[i]);
 	}
-	end = clock();
+	end = __rdtsc();
 	stFree = end - begining;
 	
 	itr = forFree.begin();
-	begining = clock();
+	begining = __rdtsc();
 	for (; itr != forFree.end(); ++itr) {
 		int i = *itr;
 		myHeap.Free(my[i]);
 	}
-	end = clock();
+	end = __rdtsc();
 	myFree = end - begining;
 	myHeap.Print();
 	int sizeOfBlock = 100 * 4096;
@@ -92,9 +112,9 @@ void comp() {
 			flag = false;
 			std::cout << "In standart heap insertblock of size: " << sizeOfBlock << std::endl;
 		}
-		sizeOfBlock *= 0.95;
+		sizeOfBlock *= 0.99;
 	}
-	std::cout << "Time of my Alloc(): " << myAlloc << "\nTime of standart Alloc(): " << stAlloc << std::endl;
+	std::cout << "Time of my Alloc(): " << myAlloc << " for " << my.size() << " elements " << "\nTime of standart Alloc(): " << stAlloc << " for " << st.size() << " elements" << std::endl;
 	std::cout << "Time of my Free(): " << myFree << "\nTime of standart Free(): " << stFree << std::endl;
-	//myHeap.Print();
+
 }

@@ -2,17 +2,34 @@
 #include <functional>
 
 
-struct less : std::binary_function <int*, int*, bool> {
-	bool operator() (const int*& x, const int*& y) const { return x<y; }
-};
 
-void CHeapManager::Create(int minSize, int maxSize) {
+
+//Создание кучи: резерв блока размера maxSize, коммит блока minSize
+void CHeapManager::Create(int minSize, int maxSize, int small_size, int mid_size) {
+
+	SYSTEM_INFO siSysInfo; 
+	::ZeroMemory(&siSysInfo, sizeof(SYSTEM_INFO));
+	GetSystemInfo(&siSysInfo);
+	pageSize = siSysInfo.dwPageSize;
+	if (small_size == 0) {
+		SMALL_SIZE = pageSize / sizeof(int);
+	}
+	else {
+		SMALL_SIZE = ((small_size - 1) / sizeof(int) + 1);
+	}
+	if (mid_size == 0) {
+		MID_SIZE = pageSize / sizeof(int);
+	}
+	else {
+		MID_SIZE = ((mid_size - 1) / sizeof(int) + 1);
+	}
+	maxSize = ((maxSize - 1) / siSysInfo.dwAllocationGranularity + 1) *  siSysInfo.dwAllocationGranularity;
 	memoryAddress = VirtualAlloc(NULL, maxSize, MEM_RESERVE, PAGE_READWRITE);
 	VirtualAlloc(memoryAddress, minSize, MEM_COMMIT, PAGE_READWRITE);
 	size = roundSize(minSize, BYTE_TO_INT_FOR_PAGE);
 	capacity = roundSize(maxSize, BYTE_TO_INT_FOR_PAGE);
 	std::cout << "size: " << size*sizeof(int) << " capacity: " << capacity*sizeof(int) << std::endl;
-	pages.resize(capacity * sizeof(int) / 4096, -1);
+	pages.resize(capacity * sizeof(int) / pageSize, -1);
 	incPages(reinterpret_cast<int*>(memoryAddress), size, TRUE);
 	putBlock(reinterpret_cast<int*>(memoryAddress), capacity);
 }
@@ -89,15 +106,15 @@ void CHeapManager::Destroy() {
 	}
 	for (int i = 0; i < pages.size(); ++i) {
 		if (pages[i] > -1) {
-			VirtualFree(reinterpret_cast<char*>(memoryAddress)+i * 4096, 4096, MEM_DECOMMIT);
+			VirtualFree(reinterpret_cast<char*>(memoryAddress)+i * pageSize, pageSize, MEM_DECOMMIT);
 			pages[i] = -1;
 		}
 	}
-	VirtualFree(memoryAddress, 4096 * pages.size(), MEM_RELEASE);
+	VirtualFree(memoryAddress, pageSize * pages.size(), MEM_RELEASE);
 }
 
 
-
+//печать кучи: вывод списков свободных и занятых блоков
 void CHeapManager::Print() {
 	std::map<int*, int>::iterator itr;
 	itr = occupiedBlocks.begin();
@@ -122,9 +139,9 @@ void CHeapManager::Print() {
 	}
 }
 
-std::pair<std::map<int*, int>*, std::map<int*, int>::iterator> CHeapManager::findPred(int* ptr) {
-	//std::cout << "findP" << std::endl;
 
+// ищем свободный кусок, имеющий наибольший указатель, меньше переданного в аргументе
+std::pair<std::map<int*, int>*, std::map<int*, int>::iterator> CHeapManager::findPred(int* ptr) {
 	std::map<int*, int>::iterator itr;
 	std::map<int*, int>::iterator itr1;
 	std::map<int*, int>::iterator itr2;
@@ -170,6 +187,8 @@ std::pair<std::map<int*, int>*, std::map<int*, int>::iterator> CHeapManager::fin
 }
 
 
+
+// ищем свободный кусок, имеющий наименьший указатель, больше переданного в аргументе
 std::pair<std::map<int*, int>*, std::map<int*, int>::iterator> CHeapManager::findFollow(int* ptr) {
 	//std::cout << "findF" << std::endl;
 
@@ -211,7 +230,7 @@ std::pair<std::map<int*, int>*, std::map<int*, int>::iterator> CHeapManager::fin
 	return std::pair<std::map<int*, int>*, std::map<int*, int>::iterator>(blocks, itr);
 }
 
-//размер в интах!
+//помещаем свободный блок указанного размера с указанным адрессом в сет свободных блоков
 void CHeapManager::putBlock(int* address, int _size) {
 	//std::cout << "putBlock" << std::endl;
 	if (_size < SMALL_SIZE) {
@@ -229,7 +248,7 @@ void CHeapManager::putBlock(int* address, int _size) {
 int CHeapManager::roundSize(int _size, int flag) {
 	//std::cout << "roundSize" << std::endl;
 
-	int intInPage = 4096 / sizeof(int);
+	int intInPage = pageSize / sizeof(int);
 	if (flag == INT_FOR_PAGES) {
 		if (_size % intInPage != 0) {
 			return (_size / intInPage + 1) * intInPage;
@@ -263,21 +282,20 @@ int CHeapManager::roundSize(int _size, int flag) {
 	}
 }
 
+//вычисляем по адресу номер страницы 
 int CHeapManager::numberOfPage(int* address) {
-	//std::cout << "numberOfP" << std::endl;
-
-	return (address - reinterpret_cast<int*> (memoryAddress)) / (4096 / sizeof(int));
+	return (address - reinterpret_cast<int*> (memoryAddress)) / (pageSize / sizeof(int));
 }
 
-//размер в интах!
+//увеличиваем счётчик страниц, включающих блок по адресу address размера _size
 void CHeapManager::incPages(int* address, int _size, bool onlyReserve = FALSE) {
 	//std::cout << "incP" << std::endl;
 
 	int i = numberOfPage(address);
-	int f = numberOfPage(address + _size);
+	int f = numberOfPage(address + _size) + 1;
 	for (; i < f; ++i) {
 		if (pages[i] == -1) {
-			VirtualAlloc(reinterpret_cast<char*>(memoryAddress)+(i * 4096), 4096, MEM_COMMIT, PAGE_READWRITE);
+			VirtualAlloc(reinterpret_cast<char*>(memoryAddress)+(i * pageSize), pageSize, MEM_COMMIT, PAGE_READWRITE);
 			++pages[i];
 		}
 		if (!onlyReserve) {
@@ -286,6 +304,7 @@ void CHeapManager::incPages(int* address, int _size, bool onlyReserve = FALSE) {
 	}
 }
 
+//уменьшаем счётчик страниц, включающих блок по адресу address размера _size
 void CHeapManager::decPages(int* address, int _size) {
 	//std::cout << "decP" << std::endl;
 
@@ -293,13 +312,15 @@ void CHeapManager::decPages(int* address, int _size) {
 	int f = numberOfPage(address + _size);
 	for (; i < f; ++i) {
 		--pages[i];
-		if ((pages[i] == 0) && (i > size * sizeof(int) / 4096)) {
-			VirtualFree(reinterpret_cast<char*>(memoryAddress)+i * 4096, 4096, MEM_DECOMMIT);
+		if ((pages[i] == 0) && (i > size * sizeof(int) / pageSize)) {
+			VirtualFree(reinterpret_cast<char*>(memoryAddress)+i * pageSize, pageSize, MEM_DECOMMIT);
 			--pages[i];
 		}
 	}
 }
 
+
+//ищем в указанном map-е блоков блок размера не меньше указаного
 void* CHeapManager::findBlock(std::map<int*, int>& blocks, int _size){
 	//std::cout << "findBlock" << std::endl;
 	std::map<int*, int>::iterator itr = blocks.begin();
